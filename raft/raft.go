@@ -1,4 +1,4 @@
-// raft.go - Final Fixed Version with Reliable Replication & Commit Handling
+// raft.go - Final Improved Version with Real-Time Replication Trigger
 package raft
 
 import (
@@ -106,8 +106,12 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.log = append(rn.log, entry)
 	rn.mu.Unlock()
 
-	// Trigger replication
-	rn.replicateLog([]internal.LogEntry{entry})
+	// Real-Time Replication Trigger Immediately
+	//	rn.replicateLog([]internal.LogEntry{entry})
+	for _, peer := range rn.Peers {
+		go rn.replicateToPeer(peer)
+	}
+
 	return nil
 }
 
