@@ -9,27 +9,25 @@ import (
 	"github.com/MuhammadTaimoorAnwar511/raft-assignment/internal"
 )
 
-// RaftService provides the methods for net/rpc calls.
 type RaftService struct {
 	rn *RaftNode
 }
 
-// RequestVote RPC method.
+// RequestVote is invoked remotely by other nodes
 func (s *RaftService) RequestVote(args *internal.RequestVoteArgs, reply *internal.RequestVoteReply) error {
 	*reply = s.rn.handleRequestVote(*args)
 	return nil
 }
 
-// AppendEntries RPC method.
+// AppendEntries is invoked remotely by other nodes
 func (s *RaftService) AppendEntries(args *internal.AppendEntriesArgs, reply *internal.AppendEntriesReply) error {
 	*reply = s.rn.handleAppendEntries(*args)
 	return nil
 }
 
-// startRPCServer registers RaftService and begins listening for RPC calls.
 func (rn *RaftNode) startRPCServer() error {
-	rpcSrv := &RaftService{rn: rn}
-	if err := rpc.Register(rpcSrv); err != nil {
+	service := &RaftService{rn: rn}
+	if err := rpc.Register(service); err != nil {
 		return err
 	}
 
@@ -46,7 +44,7 @@ func (rn *RaftNode) startRPCServer() error {
 			if err != nil {
 				select {
 				case <-rn.stopCh:
-					return // we're shutting down
+					return
 				default:
 					log.Printf("[Node %s] accept error: %v", rn.ID, err)
 					continue
@@ -58,7 +56,7 @@ func (rn *RaftNode) startRPCServer() error {
 	return nil
 }
 
-// handleRequestVote wraps the logic for receiving a RequestVote RPC (like election.go's logic).
+// handleRequestVote processes an incoming RequestVote RPC
 func (rn *RaftNode) handleRequestVote(args internal.RequestVoteArgs) internal.RequestVoteReply {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -67,45 +65,45 @@ func (rn *RaftNode) handleRequestVote(args internal.RequestVoteArgs) internal.Re
 		Term:        rn.currentTerm,
 		VoteGranted: false,
 	}
-	// 1) If caller's term < ours, reject
+
 	if args.Term < rn.currentTerm {
+		// candidate is behind
 		return reply
 	}
-	// 2) If caller's term > ours, become follower
 	if args.Term > rn.currentTerm {
 		rn.becomeFollower(args.Term)
 	}
 
-	// If we haven't voted yet or we voted for this candidate
-	if (rn.votedFor == "" || rn.votedFor == args.CandidateID) &&
-		args.LastLogTerm >= rn.LastLogTerm() && args.LastLogIndex >= rn.LastLogIndex() {
+	// If we haven't voted yet or we voted for this candidate,
+	// and candidate's log is at least as up-to-date as ours
+	upToDate := (args.LastLogTerm > rn.LastLogTerm()) ||
+		(args.LastLogTerm == rn.LastLogTerm() && args.LastLogIndex >= rn.LastLogIndex())
+
+	if (rn.votedFor == "" || rn.votedFor == args.CandidateID) && upToDate {
 		reply.VoteGranted = true
 		rn.votedFor = args.CandidateID
-		rn.electionResetEvent = nowForElection() // We "heard" from a candidate
+		rn.electionResetEvent = nowForElection()
 	}
 	reply.Term = rn.currentTerm
 	return reply
 }
 
-// sendRequestVoteRPC calls RequestVote on the peer.
+// sendRequestVoteRPC calls RequestVote on the peer
 func (rn *RaftNode) sendRequestVoteRPC(peerAddr string, args internal.RequestVoteArgs) internal.RequestVoteReply {
 	reply := internal.RequestVoteReply{}
 	client, err := rpc.Dial("tcp", peerAddr)
 	if err != nil {
-		// Could not connect => treat as no vote
 		return reply
 	}
 	defer client.Close()
 
-	callErr := client.Call("RaftService.RequestVote", &args, &reply)
-	if callErr != nil {
-		// network or RPC error => treat as no vote
+	if err := client.Call("RaftService.RequestVote", &args, &reply); err != nil {
 		return reply
 	}
 	return reply
 }
 
-// sendAppendEntriesRPC calls AppendEntries on the peer.
+// sendAppendEntriesRPC calls AppendEntries on the peer
 func (rn *RaftNode) sendAppendEntriesRPC(peerAddr string, args internal.AppendEntriesArgs) internal.AppendEntriesReply {
 	reply := internal.AppendEntriesReply{}
 	client, err := rpc.Dial("tcp", peerAddr)
@@ -114,14 +112,13 @@ func (rn *RaftNode) sendAppendEntriesRPC(peerAddr string, args internal.AppendEn
 	}
 	defer client.Close()
 
-	callErr := client.Call("RaftService.AppendEntries", &args, &reply)
-	if callErr != nil {
+	if err := client.Call("RaftService.AppendEntries", &args, &reply); err != nil {
 		return reply
 	}
 	return reply
 }
 
-// Just for consistent time usage
+// Utility to unify 'time.Now()' usage
 func nowForElection() time.Time {
 	return time.Now()
 }

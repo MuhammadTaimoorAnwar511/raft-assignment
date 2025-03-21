@@ -6,11 +6,10 @@ type CommandType int
 const (
 	CommandPut CommandType = iota
 	CommandAppend
-	CommandGet // Although "Get" typically doesn't need to go through Raft if it doesn't change state.
+	CommandGet
 )
 
 // Command is the structure of a command replicated via Raft.
-// For example, "Put" or "Append" with a Key/Value.
 type Command struct {
 	Type  CommandType
 	Key   string
@@ -24,7 +23,7 @@ type LogEntry struct {
 	Command Command
 }
 
-// RaftState represents the node's current state in the Raft protocol (Follower, Candidate, Leader).
+// RaftState represents the node's current state in the Raft protocol.
 type RaftState int
 
 const (
@@ -33,7 +32,7 @@ const (
 	Leader
 )
 
-// RequestVoteArgs corresponds to the "Request Vote" RPC arguments in the Raft paper.
+// RequestVoteArgs ...
 type RequestVoteArgs struct {
 	Term         int
 	CandidateID  string
@@ -41,13 +40,13 @@ type RequestVoteArgs struct {
 	LastLogTerm  int
 }
 
-// RequestVoteReply corresponds to the "Request Vote" RPC reply in the Raft paper.
+// RequestVoteReply ...
 type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
 }
 
-// AppendEntriesArgs corresponds to the "Append Entries" RPC arguments in the Raft paper.
+// AppendEntriesArgs ...
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderID     string
@@ -57,7 +56,7 @@ type AppendEntriesArgs struct {
 	LeaderCommit int
 }
 
-// AppendEntriesReply corresponds to the "Append Entries" RPC reply in the Raft paper.
+// AppendEntriesReply ...
 type AppendEntriesReply struct {
 	Term      int
 	Success   bool

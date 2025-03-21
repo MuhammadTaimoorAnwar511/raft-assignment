@@ -26,7 +26,7 @@ func (s *Store) Put(key, value string) {
 	s.kvMap[key] = value
 }
 
-// Append appends the value to an existing key (or behaves like Put if the key doesn't exist).
+// Append appends the value to an existing key (or behaves like Put if not exists).
 func (s *Store) Append(key, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -38,7 +38,7 @@ func (s *Store) Append(key, value string) {
 	}
 }
 
-// Get retrieves the value for a given key. The boolean indicates if the key was found.
+// Get retrieves the value for a given key.
 func (s *Store) Get(key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -47,7 +47,6 @@ func (s *Store) Get(key string) (string, bool) {
 }
 
 // ApplyCommand applies a Raft command (Put, Append, or Get).
-// In practice, "Get" doesn't change state, so we might not do anything for that case.
 func (s *Store) ApplyCommand(cmd internal.Command) {
 	switch cmd.Type {
 	case internal.CommandPut:
@@ -55,7 +54,6 @@ func (s *Store) ApplyCommand(cmd internal.Command) {
 	case internal.CommandAppend:
 		s.Append(cmd.Key, cmd.Value)
 	case internal.CommandGet:
-		// Get is read-only, so no state change. We do nothing here.
-		// Typically, Get wouldn't be replicated in Raft unless it matters for linearizability.
+		// GET is read-only, no store change
 	}
 }

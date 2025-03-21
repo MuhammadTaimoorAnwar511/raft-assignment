@@ -8,12 +8,12 @@ import (
 	"github.com/MuhammadTaimoorAnwar511/raft-assignment/internal"
 )
 
-// runElectionTimer triggers leader election when needed.
 func (rn *RaftNode) runElectionTimer() {
 	defer rn.wg.Done()
 
 	for {
 		timeout := rn.randomElectionTimeout()
+
 		time.Sleep(timeout)
 
 		rn.mu.Lock()
@@ -44,17 +44,17 @@ func (rn *RaftNode) startElection() {
 
 	fmt.Printf("[Node %s] Starting election for term %d\n", rn.ID, termStarted)
 
-	votesReceived := int32(1)
+	votesReceived := int32(1) // we vote for ourselves
 
 	for _, peerAddr := range rn.Peers {
-		go func(p string) {
+		go func(addr string) {
 			args := internal.RequestVoteArgs{
 				Term:         termStarted,
 				CandidateID:  rn.ID,
-				LastLogTerm:  rn.LastLogTerm(),
 				LastLogIndex: rn.LastLogIndex(),
+				LastLogTerm:  rn.LastLogTerm(),
 			}
-			reply := rn.sendRequestVoteRPC(p, args)
+			reply := rn.sendRequestVoteRPC(addr, args)
 
 			rn.mu.Lock()
 			defer rn.mu.Unlock()
@@ -87,16 +87,17 @@ func (rn *RaftNode) becomeLeader() {
 	rn.state = internal.Leader
 	fmt.Printf("[Node %s] Became Leader in term %d\n", rn.ID, rn.currentTerm)
 
-	for _, peer := range rn.Peers {
-		rn.nextIndex[peer] = rn.lastLogIndex() + 1
-		rn.matchIndex[peer] = 0
+	for _, p := range rn.Peers {
+		rn.nextIndex[p] = rn.LastLogIndex() + 1
+		rn.matchIndex[p] = 0
 	}
 
+	// Send an immediate heartbeat
 	rn.sendHeartbeat()
 }
 
-// randomElectionTimeout generates a random timeout between 150-300ms.
 func (rn *RaftNode) randomElectionTimeout() time.Duration {
+	// typical 150-300ms range
 	return time.Duration(150+randIntn(150)) * time.Millisecond
 }
 

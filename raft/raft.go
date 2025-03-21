@@ -1,4 +1,3 @@
-// raft.go - Final Cleaned Version (lastLogIndex and lastLogTerm centralized here)
 package raft
 
 import (
@@ -60,19 +59,25 @@ func NewRaftNode(id, address string, peers []string) (*RaftNode, error) {
 func (rn *RaftNode) Start() error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
+
 	fmt.Printf("[Node %s] Starting. State = Follower\n", rn.ID)
+
 	if err := rn.startRPCServer(); err != nil {
 		return err
 	}
+
 	rn.wg.Add(2)
 	go rn.runElectionTimer()
 	go rn.runHeartbeatLoop()
+
 	return nil
 }
 
 func (rn *RaftNode) Stop() {
 	close(rn.stopCh)
-	rn.listener.Close()
+	if rn.listener != nil {
+		rn.listener.Close()
+	}
 	rn.wg.Wait()
 	fmt.Printf("[Node %s] Stopped.\n", rn.ID)
 }
@@ -80,6 +85,7 @@ func (rn *RaftNode) Stop() {
 func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
+
 	if rn.state != internal.Leader {
 		return fmt.Errorf("Node %s is not the leader. Propose ignored.", rn.ID)
 	}
@@ -97,6 +103,18 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	}
 
 	fmt.Printf("[Node %s][Leader] Proposing command: %+v\n", rn.ID, command)
+
+	// 1. Append to local log
+	newEntry := internal.LogEntry{
+		Term:    rn.currentTerm,
+		Index:   rn.LastLogIndex() + 1,
+		Command: command,
+	}
+	rn.log = append(rn.log, newEntry)
+
+	// 2. Replicate to followers
+	go rn.replicateLog([]internal.LogEntry{newEntry})
+
 	return nil
 }
 

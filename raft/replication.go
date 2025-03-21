@@ -22,7 +22,6 @@ func (rn *RaftNode) runHeartbeatLoop() {
 				rn.sendHeartbeat()
 			}
 			rn.mu.Unlock()
-
 		case <-rn.stopCh:
 			fmt.Printf("[Node %s] Heartbeat loop stopped.\n", rn.ID)
 			return
@@ -30,6 +29,7 @@ func (rn *RaftNode) runHeartbeatLoop() {
 	}
 }
 
+// sendHeartbeat sends AppendEntries with no entries
 func (rn *RaftNode) sendHeartbeat() {
 	for _, peer := range rn.Peers {
 		args := rn.prepareAppendEntriesArgs(nil)
@@ -46,11 +46,10 @@ func (rn *RaftNode) sendHeartbeat() {
 	}
 }
 
-// replicateLog would be called when we append a command to our log
+// replicateLog is called when we appended a new command locally
 func (rn *RaftNode) replicateLog(entries []internal.LogEntry) {
-	for _, e := range entries {
-		rn.log = append(rn.log, e)
-	}
+	// We already appended to local log in Propose()
+	// Now let's push them to each follower
 	for _, p := range rn.Peers {
 		go rn.replicateToPeer(p)
 	}
@@ -65,9 +64,12 @@ func (rn *RaftNode) replicateToPeer(peer string) {
 		if nextIdx <= 0 {
 			nextIdx = 1
 		}
-		if nextIdx > rn.lastLogIndex() {
+
+		if nextIdx > rn.LastLogIndex() {
+			// follower is up-to-date
 			break
 		}
+
 		sendEntries := rn.log[nextIdx-1:]
 		args := rn.prepareAppendEntriesArgs(sendEntries)
 		args.PrevLogIndex = nextIdx - 1
@@ -81,12 +83,14 @@ func (rn *RaftNode) replicateToPeer(peer string) {
 			return
 		}
 		if reply.Success {
+			// update matchIndex + nextIndex
 			lastIndex := sendEntries[len(sendEntries)-1].Index
 			rn.matchIndex[peer] = lastIndex
 			rn.nextIndex[peer] = lastIndex + 1
 			rn.updateCommitIndex()
 			break
 		} else {
+			// follower log mismatch => fallback
 			rn.nextIndex[peer] = reply.NextIndex
 			if rn.nextIndex[peer] < 1 {
 				rn.nextIndex[peer] = 1
@@ -106,7 +110,7 @@ func (rn *RaftNode) prepareAppendEntriesArgs(entries []internal.LogEntry) intern
 	}
 }
 
-// handleAppendEntries is called by the RPC server to handle an incoming AppendEntries.
+// handleAppendEntries is called via net/rpc from a leader
 func (rn *RaftNode) handleAppendEntries(args internal.AppendEntriesArgs) (reply internal.AppendEntriesReply) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -114,7 +118,7 @@ func (rn *RaftNode) handleAppendEntries(args internal.AppendEntriesArgs) (reply 
 	reply.Term = rn.currentTerm
 	if args.Term < rn.currentTerm {
 		reply.Success = false
-		reply.NextIndex = rn.lastLogIndex() + 1
+		reply.NextIndex = rn.LastLogIndex() + 1
 		return
 	}
 
@@ -124,14 +128,14 @@ func (rn *RaftNode) handleAppendEntries(args internal.AppendEntriesArgs) (reply 
 		rn.state = internal.Follower
 	}
 
-	// reset election timer
+	// we got a heartbeat => reset election timer
 	rn.electionResetEvent = time.Now()
 
 	// check log consistency
 	if args.PrevLogIndex > 0 {
 		if args.PrevLogIndex > len(rn.log) {
 			reply.Success = false
-			reply.NextIndex = rn.lastLogIndex() + 1
+			reply.NextIndex = rn.LastLogIndex() + 1
 			return
 		}
 		prevTerm := rn.log[args.PrevLogIndex-1].Term
@@ -167,23 +171,22 @@ func (rn *RaftNode) handleAppendEntries(args internal.AppendEntriesArgs) (reply 
 	}
 
 	reply.Success = true
-	reply.NextIndex = rn.lastLogIndex() + 1
+	reply.NextIndex = rn.LastLogIndex() + 1
 	return
 }
 
 func (rn *RaftNode) findConflictIndex(conflictTerm int, conflictIndex int) int {
-	return conflictIndex - 1
+	return conflictIndex - 1 // naive fallback
 }
 
 func (rn *RaftNode) updateCommitIndex() {
-	for n := rn.lastLogIndex(); n > rn.commitIndex; n-- {
-		count := 1
+	for n := rn.LastLogIndex(); n > rn.commitIndex; n-- {
+		count := 1 // leader includes itself
 		for _, p := range rn.Peers {
 			if rn.matchIndex[p] >= n {
 				count++
 			}
 		}
-		// only commit log entries from the currentTerm
 		if count > len(rn.Peers)/2 && rn.log[n-1].Term == rn.currentTerm {
 			rn.commitIndex = n
 			rn.applyEntries()
@@ -200,12 +203,4 @@ func (rn *RaftNode) applyEntries() {
 			rn.applyCallback(entry.Command)
 		}
 	}
-}
-
-// lastLogIndex is same logic as election.go, but repeated here for convenience
-func (rn *RaftNode) lastLogIndex() int {
-	if len(rn.log) == 0 {
-		return 0
-	}
-	return rn.log[len(rn.log)-1].Index
 }
