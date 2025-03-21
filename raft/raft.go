@@ -1,3 +1,4 @@
+// raft.go - Final Cleaned Version (lastLogIndex and lastLogTerm centralized here)
 package raft
 
 import (
@@ -9,30 +10,23 @@ import (
 	"github.com/MuhammadTaimoorAnwar511/raft-assignment/internal"
 )
 
-// RaftNode holds state for one Raft server.
 type RaftNode struct {
-	// Identifiers
 	ID      string
-	Address string   // e.g. "localhost:9001"
-	Peers   []string // addresses of peers
+	Address string
+	Peers   []string
 
-	// Persistent State
 	currentTerm int
 	votedFor    string
 	log         []internal.LogEntry
 
-	// Volatile State
 	commitIndex int
 	lastApplied int
 
-	// Volatile leader-only state
 	nextIndex  map[string]int
 	matchIndex map[string]int
 
-	// Raft node state
 	state internal.RaftState
 
-	// Concurrency
 	mu      sync.Mutex
 	applyCh chan internal.LogEntry
 	stopCh  chan struct{}
@@ -40,10 +34,9 @@ type RaftNode struct {
 
 	applyCallback      func(internal.Command)
 	electionResetEvent time.Time
-	listener           net.Listener // for RPC
+	listener           net.Listener
 }
 
-// NewRaftNode initializes a Raft node.
 func NewRaftNode(id, address string, peers []string) (*RaftNode, error) {
 	node := &RaftNode{
 		ID:                 id,
@@ -64,27 +57,19 @@ func NewRaftNode(id, address string, peers []string) (*RaftNode, error) {
 	return node, nil
 }
 
-// Start begins the Raft node's operation.
 func (rn *RaftNode) Start() error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-
 	fmt.Printf("[Node %s] Starting. State = Follower\n", rn.ID)
-
-	// Start RPC server
 	if err := rn.startRPCServer(); err != nil {
 		return err
 	}
-
-	// Start background goroutines
 	rn.wg.Add(2)
 	go rn.runElectionTimer()
 	go rn.runHeartbeatLoop()
-
 	return nil
 }
 
-// Stop shuts down the Raft node.
 func (rn *RaftNode) Stop() {
 	close(rn.stopCh)
 	rn.listener.Close()
@@ -92,19 +77,14 @@ func (rn *RaftNode) Stop() {
 	fmt.Printf("[Node %s] Stopped.\n", rn.ID)
 }
 
-// Propose handles client proposals.
 func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-
 	if rn.state != internal.Leader {
 		return fmt.Errorf("Node %s is not the leader. Propose ignored.", rn.ID)
 	}
 
-	command := internal.Command{
-		Key:   key,
-		Value: value,
-	}
+	command := internal.Command{Key: key, Value: value}
 	switch cmdType {
 	case "put":
 		command.Type = internal.CommandPut
@@ -120,23 +100,21 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	return nil
 }
 
-// SetApplyCallback sets a function for committed log entries.
 func (rn *RaftNode) SetApplyCallback(cb func(internal.Command)) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 	rn.applyCallback = cb
 }
 
-// lastLogIndex returns the last log index.
-func (rn *RaftNode) lastLogIndex() int {
+// Centralized lastLogIndex and lastLogTerm helpers
+func (rn *RaftNode) LastLogIndex() int {
 	if len(rn.log) == 0 {
 		return 0
 	}
 	return rn.log[len(rn.log)-1].Index
 }
 
-// lastLogTerm returns the last log term.
-func (rn *RaftNode) lastLogTerm() int {
+func (rn *RaftNode) LastLogTerm() int {
 	if len(rn.log) == 0 {
 		return 0
 	}

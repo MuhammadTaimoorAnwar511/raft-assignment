@@ -51,8 +51,8 @@ func (rn *RaftNode) startElection() {
 			args := internal.RequestVoteArgs{
 				Term:         termStarted,
 				CandidateID:  rn.ID,
-				LastLogIndex: rn.lastLogIndex(),
-				LastLogTerm:  rn.lastLogTerm(),
+				LastLogTerm:  rn.LastLogTerm(),
+				LastLogIndex: rn.LastLogIndex(),
 			}
 			reply := rn.sendRequestVoteRPC(p, args)
 

@@ -78,7 +78,7 @@ func (rn *RaftNode) handleRequestVote(args internal.RequestVoteArgs) internal.Re
 
 	// If we haven't voted yet or we voted for this candidate
 	if (rn.votedFor == "" || rn.votedFor == args.CandidateID) &&
-		args.LastLogTerm >= rn.lastLogTerm() && args.LastLogIndex >= rn.lastLogIndex() {
+		args.LastLogTerm >= rn.LastLogTerm() && args.LastLogIndex >= rn.LastLogIndex() {
 		reply.VoteGranted = true
 		rn.votedFor = args.CandidateID
 		rn.electionResetEvent = nowForElection() // We "heard" from a candidate
