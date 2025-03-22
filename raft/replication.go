@@ -29,20 +29,10 @@ func (rn *RaftNode) runHeartbeatLoop() {
 	}
 }
 
-// sendHeartbeat sends AppendEntries with no entries
+// sendHeartbeat sends AppendEntries with actual log entries to help followers catch up
 func (rn *RaftNode) sendHeartbeat() {
 	for _, peer := range rn.Peers {
-		args := rn.prepareAppendEntriesArgs(nil)
-		go func(p string, a internal.AppendEntriesArgs) {
-			reply := rn.sendAppendEntriesRPC(p, a)
-
-			rn.mu.Lock()
-			defer rn.mu.Unlock()
-
-			if reply.Term > rn.currentTerm {
-				rn.becomeFollower(reply.Term)
-			}
-		}(peer, args)
+		go rn.replicateToPeer(peer)
 	}
 }
 
@@ -57,47 +47,46 @@ func (rn *RaftNode) replicateLog(entries []internal.LogEntry) {
 
 func (rn *RaftNode) replicateToPeer(peer string) {
 	rn.mu.Lock()
+	nextIdx := rn.nextIndex[peer]
+	if nextIdx <= 0 {
+		nextIdx = 1
+	}
+	var sendEntries []internal.LogEntry
+	if nextIdx <= rn.LastLogIndex() {
+		sendEntries = rn.log[nextIdx-1:]
+	} else {
+		sendEntries = nil // Still send heartbeat
+	}
+	args := rn.prepareAppendEntriesArgs(sendEntries)
+	args.PrevLogIndex = nextIdx - 1
+	if args.PrevLogIndex > 0 && args.PrevLogIndex <= len(rn.log) {
+		args.PrevLogTerm = rn.log[args.PrevLogIndex-1].Term
+	}
+	rn.mu.Unlock()
+
+	reply := rn.sendAppendEntriesRPC(peer, args)
+
+	rn.mu.Lock()
 	defer rn.mu.Unlock()
 
-	for rn.state == internal.Leader {
-		nextIdx := rn.nextIndex[peer]
-		if nextIdx <= 0 {
-			nextIdx = 1
-		}
+	if reply.Term > rn.currentTerm {
+		rn.becomeFollower(reply.Term)
+		return
+	}
 
-		if nextIdx > rn.LastLogIndex() {
-			// follower is up-to-date
-			break
-		}
-
-		sendEntries := rn.log[nextIdx-1:]
-		args := rn.prepareAppendEntriesArgs(sendEntries)
-		args.PrevLogIndex = nextIdx - 1
-		if args.PrevLogIndex > 0 {
-			args.PrevLogTerm = rn.log[args.PrevLogIndex-1].Term
-		}
-
-		reply := rn.sendAppendEntriesRPC(peer, args)
-		if reply.Term > rn.currentTerm {
-			rn.becomeFollower(reply.Term)
-			return
-		}
-		if reply.Success {
-			// update matchIndex + nextIndex
-			lastIndex := sendEntries[len(sendEntries)-1].Index
-			rn.matchIndex[peer] = lastIndex
-			rn.nextIndex[peer] = lastIndex + 1
-			rn.updateCommitIndex()
-			break
-		} else {
-			// follower log mismatch => fallback
-			rn.nextIndex[peer] = reply.NextIndex
-			if rn.nextIndex[peer] < 1 {
-				rn.nextIndex[peer] = 1
-			}
+	if reply.Success && len(sendEntries) > 0 {
+		lastIndex := sendEntries[len(sendEntries)-1].Index
+		rn.matchIndex[peer] = lastIndex
+		rn.nextIndex[peer] = lastIndex + 1
+		rn.updateCommitIndex()
+	} else if !reply.Success {
+		rn.nextIndex[peer] = reply.NextIndex
+		if rn.nextIndex[peer] < 1 {
+			rn.nextIndex[peer] = 1
 		}
 	}
 }
+
 
 func (rn *RaftNode) prepareAppendEntriesArgs(entries []internal.LogEntry) internal.AppendEntriesArgs {
 	return internal.AppendEntriesArgs{
