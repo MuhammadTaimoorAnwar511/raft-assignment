@@ -54,6 +54,7 @@ func NewRaftNode(id, address string, peers []string) (*RaftNode, error) {
 		stopCh:             make(chan struct{}),
 		electionResetEvent: time.Now(),
 	}
+	fmt.Printf("[Node %s] Initialized with peers: %v\n", id, peers)
 	return node, nil
 }
 
@@ -64,13 +65,16 @@ func (rn *RaftNode) Start() error {
 	if err := rn.startRPCServer(); err != nil {
 		return err
 	}
+	fmt.Printf("[Node %s] Listening on %s\n", rn.ID, rn.Address)
 	rn.wg.Add(2)
 	go rn.runElectionTimer()
 	go rn.runHeartbeatLoop()
+	fmt.Printf("[Node %s] Background services started (election timer, heartbeat)\n", rn.ID)
 	return nil
 }
 
 func (rn *RaftNode) Stop() {
+	fmt.Printf("[Node %s] Initiating shutdown...\n", rn.ID)
 	close(rn.stopCh)
 	rn.listener.Close()
 	rn.wg.Wait()
@@ -94,6 +98,7 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 		command.Type = internal.CommandGet
 	default:
 		rn.mu.Unlock()
+		fmt.Printf("[Node %s] Rejected invalid command type: %s\n", rn.ID, cmdType)
 		return fmt.Errorf("unknown command type: %s", cmdType)
 	}
 
@@ -104,7 +109,9 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 		Command: command,
 	}
 	rn.log = append(rn.log, entry)
+	fmt.Printf("[Node %s] Appended %s command '%s' at index %d (Term %d)\n", rn.ID, cmdType, key, newIndex, rn.currentTerm)
 	rn.mu.Unlock()
+	fmt.Printf("[Node %s] Starting replication for index %d to %d peers\n", rn.ID, newIndex, len(rn.Peers))
 
 	for _, peer := range rn.Peers {
 		go rn.replicateToPeer(peer)
@@ -117,6 +124,7 @@ func (rn *RaftNode) SetApplyCallback(cb func(internal.Command)) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 	rn.applyCallback = cb
+	fmt.Printf("[Node %s] Apply callback registered\n", rn.ID)
 }
 
 func (rn *RaftNode) LastLogIndex() int {

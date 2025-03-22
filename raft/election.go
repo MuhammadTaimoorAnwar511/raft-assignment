@@ -23,6 +23,7 @@ func (rn *RaftNode) runElectionTimer() {
 		}
 
 		if time.Since(rn.electionResetEvent) >= timeout {
+			fmt.Printf("[Node %s] No leader detected, initiating election\n", rn.ID)
 			rn.startElection()
 		}
 		rn.mu.Unlock()
@@ -63,12 +64,15 @@ func (rn *RaftNode) startElection() {
 				return
 			}
 			if reply.Term > rn.currentTerm {
+				fmt.Printf("[Node %s] Higher term detected (%d), reverting to follower\n", rn.ID, reply.Term)
 				rn.becomeFollower(reply.Term)
 				return
 			}
 			if reply.VoteGranted {
+				fmt.Printf("[Node %s] Received vote from %s\n", rn.ID, addr)
 				atomic.AddInt32(&votesReceived, 1)
 				if int(atomic.LoadInt32(&votesReceived)) > len(rn.Peers)/2 {
+					fmt.Printf("[Node %s] Majority achieved with %d votes\n", rn.ID, votesReceived)
 					rn.becomeLeader()
 				}
 			}
@@ -94,6 +98,7 @@ func (rn *RaftNode) becomeLeader() {
 
 	// Send an immediate heartbeat
 	rn.sendHeartbeat()
+	fmt.Printf("[Node %s] Sent initial heartbeat to all peers\n", rn.ID)
 }
 
 func (rn *RaftNode) randomElectionTimeout() time.Duration {
