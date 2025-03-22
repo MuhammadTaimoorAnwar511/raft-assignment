@@ -81,7 +81,7 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.mu.Lock()
 	if rn.state != internal.Leader {
 		rn.mu.Unlock()
-		return fmt.Errorf("Node %s is not the leader. Propose ignored.", rn.ID)
+		return fmt.Errorf("node %s is not the leader, propose ignored", rn.ID)
 	}
 
 	command := internal.Command{Key: key, Value: value}
@@ -94,7 +94,7 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 		command.Type = internal.CommandGet
 	default:
 		rn.mu.Unlock()
-		return fmt.Errorf("unknown command type %s", cmdType)
+		return fmt.Errorf("unknown command type: %s", cmdType)
 	}
 
 	newIndex := rn.LastLogIndex() + 1
@@ -106,8 +106,6 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.log = append(rn.log, entry)
 	rn.mu.Unlock()
 
-	// Real-Time Replication Trigger Immediately
-	//	rn.replicateLog([]internal.LogEntry{entry})
 	for _, peer := range rn.Peers {
 		go rn.replicateToPeer(peer)
 	}

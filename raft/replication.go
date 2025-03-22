@@ -36,15 +36,6 @@ func (rn *RaftNode) sendHeartbeat() {
 	}
 }
 
-// replicateLog is called when we appended a new command locally
-func (rn *RaftNode) replicateLog(entries []internal.LogEntry) {
-	// We already appended to local log in Propose()
-	// Now let's push them to each follower
-	for _, p := range rn.Peers {
-		go rn.replicateToPeer(p)
-	}
-}
-
 func (rn *RaftNode) replicateToPeer(peer string) {
 	rn.mu.Lock()
 	nextIdx := rn.nextIndex[peer]
@@ -86,7 +77,6 @@ func (rn *RaftNode) replicateToPeer(peer string) {
 		}
 	}
 }
-
 
 func (rn *RaftNode) prepareAppendEntriesArgs(entries []internal.LogEntry) internal.AppendEntriesArgs {
 	return internal.AppendEntriesArgs{
@@ -164,7 +154,7 @@ func (rn *RaftNode) handleAppendEntries(args internal.AppendEntriesArgs) (reply 
 	return
 }
 
-func (rn *RaftNode) findConflictIndex(conflictTerm int, conflictIndex int) int {
+func (rn *RaftNode) findConflictIndex(_ int, conflictIndex int) int {
 	return conflictIndex - 1 // naive fallback
 }
 
