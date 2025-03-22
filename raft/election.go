@@ -84,12 +84,14 @@ func (rn *RaftNode) becomeFollower(newTerm int) {
 	rn.currentTerm = newTerm
 	rn.state = internal.Follower
 	rn.votedFor = ""
-	fmt.Printf("[Node %s] Became Follower in term %d\n", rn.ID, newTerm)
+	fmt.Printf("[Node %s] \033[33mBecame Follower\033[0m in term %d\n", rn.ID, newTerm)
+
 }
 
 func (rn *RaftNode) becomeLeader() {
 	rn.state = internal.Leader
-	fmt.Printf("[Node %s] Became Leader in term %d\n", rn.ID, rn.currentTerm)
+	fmt.Printf("[Node %s] \033[32mBecame Leader\033[0m in term %d\n", rn.ID, rn.currentTerm)
+
 
 	for _, p := range rn.Peers {
 		rn.nextIndex[p] = rn.LastLogIndex() + 1

@@ -20,3 +20,6 @@ put myKey hello
 
 get myKey
 
+append myKey world
+
+exit

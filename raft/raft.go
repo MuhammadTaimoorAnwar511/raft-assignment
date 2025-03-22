@@ -85,7 +85,7 @@ func (rn *RaftNode) Propose(cmdType string, key string, value string) error {
 	rn.mu.Lock()
 	if rn.state != internal.Leader {
 		rn.mu.Unlock()
-		return fmt.Errorf("node %s is not the leader, propose ignored", rn.ID)
+		return fmt.Errorf("\033[31mnode %s is not the leader, propose ignored\033[0m", rn.ID)
 	}
 
 	command := internal.Command{Key: key, Value: value}
